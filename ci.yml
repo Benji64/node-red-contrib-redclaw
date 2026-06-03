@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check all nodes load correctly
+        run: |
+          node -e "
+          const pkg = require('./package.json');
+          const nodes = pkg['node-red'].nodes;
+          let ok = true;
+          Object.entries(nodes).forEach(([name, path]) => {
+            try {
+              require('./' + path);
+              console.log('OK', name);
+            } catch(e) {
+              console.error('FAIL', name, ':', e.message);
+              ok = false;
+            }
+          });
+          if (!ok) process.exit(1);
+          console.log('All', Object.keys(nodes).length, 'nodes OK');
+          "
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

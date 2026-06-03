@@ -1,0 +1,155 @@
+<script type="text/javascript">
+RED.nodes.registerType("agent-orchestrator", {
+  category: "RedClaw",
+  color:    "#cba6f7",
+  defaults: {
+    name:          { value: "" },
+    llmMode:       { value: "internal" },
+    llmConfig:     { value: "", type: "llm-config" },
+    memoryEnabled: { value: true },
+    memoryDir:     { value: "" },
+    maxSteps:      { value: 5 },
+    maxHistory:    { value: 6 },
+    ttlHours:      { value: 24 },
+    debugMode:     { value: false },
+  },
+  inputs:  1,
+  outputs: 3,
+  icon:    "font-awesome/fa-magic",
+  outputLabels: [
+    "→ Security Gate / MCP Router",
+    "→ Réponse utilisateur",
+    "→ LLM externe (mode externe)",
+  ],
+  label: function () { return this.name || "Orchestrateur"; },
+
+  oneditprepare: function () {
+    function toggleMode() {
+      const ext = $("#node-input-llmMode").val() === "external";
+      $(".rc-llm-internal").toggle(!ext);
+      $(".rc-llm-external").toggle(ext);
+    }
+    $("#node-input-llmMode").on("change", toggleMode);
+    toggleMode();
+
+    function toggleMem() {
+      $(".rc-mem-row").toggle($("#node-input-memoryEnabled").is(":checked"));
+    }
+    $("#node-input-memoryEnabled").on("change", toggleMem);
+    toggleMem();
+
+    $("#rc-orch-sessions").on("click", async function () {
+      try {
+        const r = await fetch("/redclaw/sessions");
+        const d = await r.json();
+        if (!d.sessions.length) return RED.notify("Aucune session active", "info");
+        alert(d.sessions.map(s =>
+          `• ${s.id} — ${s.count} msg — ${new Date(s.updatedAt).toLocaleString()}`
+        ).join("\n"));
+      } catch (e) { RED.notify(e.message, "error"); }
+    });
+  },
+});
+</script>
+
+<script type="text/html" data-template-name="agent-orchestrator">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> Nom</label>
+    <input type="text" id="node-input-name" placeholder="Orchestrateur" />
+  </div>
+
+  <!-- Mode LLM -->
+  <div class="form-row">
+    <label for="node-input-llmMode"><i class="fa fa-brain"></i> Mode LLM</label>
+    <select id="node-input-llmMode" style="width:75%;">
+      <option value="internal">Interne — llm-config (Ollama, OpenAI, Anthropic…)</option>
+      <option value="external">Externe — nœud LLM Node-RED (llama-cpp, etc.)</option>
+    </select>
+  </div>
+
+  <!-- Config interne -->
+  <div class="rc-llm-internal form-row">
+    <label for="node-input-llmConfig"><i class="fa fa-cog"></i> Config LLM</label>
+    <input type="text" id="node-input-llmConfig" />
+  </div>
+
+  <!-- Info externe -->
+  <div class="rc-llm-external" style="display:none;font-size:0.78em;color:#555;
+       background:#f0f0ff;padding:8px;border-radius:5px;border:1px solid #cba6f7;
+       line-height:1.7;margin-bottom:8px;">
+    <b>Mode externe — câblage :</b><br/>
+    <code>Output 3 ──► [llama-cpp] ──► Input de l'Orchestrateur</code><br/>
+    <br/>
+    Le prompt est envoyé en <code>msg.payload = messages[]</code> (format chat).<br/>
+    La réponse est lue depuis <code>msg.payload</code> (string).<br/>
+    <code>msg.redclaw_llm_id</code> est préservé automatiquement — ne pas le modifier.
+  </div>
+
+  <hr style="border-color:#eee;"/>
+
+  <div class="form-row">
+    <label><i class="fa fa-repeat"></i> Max étapes</label>
+    <input type="number" id="node-input-maxSteps" min="1" max="20" style="width:70px;" />
+    <span style="font-size:0.8em;color:#888;margin-left:8px;">aller-retours LLM ↔ tool</span>
+  </div>
+  <div class="form-row">
+    <input type="checkbox" id="node-input-debugMode" style="width:auto;" />
+    <label for="node-input-debugMode" style="width:auto;margin-left:5px;">Debug (logs LLM)</label>
+  </div>
+
+  <hr style="border-color:#eee;"/>
+
+  <div class="form-row">
+    <input type="checkbox" id="node-input-memoryEnabled" style="width:auto;" />
+    <label for="node-input-memoryEnabled" style="width:auto;margin-left:5px;">
+      <i class="fa fa-database"></i> Mémoire de conversation
+    </label>
+  </div>
+  <div class="form-row rc-mem-row">
+    <label for="node-input-memoryDir"><i class="fa fa-folder"></i> Dossier mémoire</label>
+    <input type="text" id="node-input-memoryDir" placeholder="~/.node-red/redclaw-memory (défaut)" />
+  </div>
+  <div class="form-row rc-mem-row" style="display:flex;gap:14px;">
+    <div>
+      <label style="display:block;font-size:0.8em;color:#888;">Échanges retenus</label>
+      <input type="number" id="node-input-maxHistory" min="1" max="20" style="width:65px;" />
+    </div>
+    <div>
+      <label style="display:block;font-size:0.8em;color:#888;">TTL (heures)</label>
+      <input type="number" id="node-input-ttlHours" min="1" style="width:65px;" />
+    </div>
+    <div style="display:flex;align-items:flex-end;">
+      <button id="rc-orch-sessions" class="red-ui-button">
+        <i class="fa fa-list"></i> Sessions
+      </button>
+    </div>
+  </div>
+</script>
+
+<script type="text/html" data-help-name="agent-orchestrator">
+  <p><b>RedClaw — Orchestrateur</b></p>
+
+  <h3>Mode Interne</h3>
+  <p>Utilise <b>llm-config</b> directement (Ollama, OpenAI, Anthropic, LM Studio, REST).</p>
+
+  <h3>Mode Externe</h3>
+  <p>Envoie le prompt sur <b>Output 3</b> vers n'importe quel nœud LLM Node-RED.<br/>
+  Compatible avec <code>node-red-contrib-llama-cpp</code> et tout autre nœud LLM.</p>
+  <pre style="font-size:10px;">
+Output 3 ──► [llama-cpp (mode chat)]
+                   Output 1 ──► [Orchestrateur] Input
+  </pre>
+  <p><code>msg.redclaw_llm_id</code> doit être préservé dans msg — automatique si le
+  nœud LLM ne remplace pas msg entièrement.</p>
+
+  <h3>Sorties</h3>
+  <dl class="message-properties">
+    <dt>Output 1</dt><dd>Tool call → Security Gate → MCP Router</dd>
+    <dt>Output 2</dt><dd>Réponse finale → utilisateur</dd>
+    <dt>Output 3</dt><dd>Prompt LLM → nœud LLM externe (mode externe)</dd>
+  </dl>
+
+  <h3>Retour LLM externe</h3>
+  <p>Le nœud LLM doit retourner <code>msg.payload</code> = string (la réponse).<br/>
+  Compatible <code>node-red-contrib-llama-cpp</code> en mode <b>chat</b>.</p>
+</script>
