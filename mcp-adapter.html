@@ -38,10 +38,9 @@ msg.payload = {
 };
 return msg;`,
       output: `const dps = msg.payload?.data?.dps || {};
-msg.adaptateur.success    = true;
-msg.adaptateur.state      = dps["1"] ? "ON" : "OFF";
-msg.adaptateur.brightness = dps["2"] ? Math.round(dps["2"]/10) : undefined;
-return msg;`,
+adaptateur.success    = true;
+adaptateur.state      = dps["1"] ? "ON" : "OFF";
+adaptateur.brightness = dps["2"] ? Math.round(dps["2"] / 10) : undefined;`,
     },
     http: {
       label: "HTTP Request",
@@ -49,19 +48,17 @@ return msg;`,
 msg.url     = msg.routeur.params.url || "http://mon-api/endpoint";
 msg.payload = msg.routeur.params.body || {};
 return msg;`,
-      output: `msg.adaptateur.success    = msg.statusCode >= 200 && msg.statusCode < 300;
-msg.adaptateur.statusCode = msg.statusCode;
-msg.adaptateur.data       = msg.payload;
-return msg;`,
+      output: `adaptateur.success    = msg.statusCode >= 200 && msg.statusCode < 300;
+adaptateur.statusCode = msg.statusCode;
+adaptateur.data       = msg.payload;`,
     },
     mqtt: {
       label: "MQTT publish",
       input: `msg.topic   = msg.routeur.params.topic || "home/device/set";
 msg.payload = JSON.stringify(msg.routeur.params.data || {});
 return msg;`,
-      output: `msg.adaptateur.success   = true;
-msg.adaptateur.published = true;
-return msg;`,
+      output: `adaptateur.success   = true;
+adaptateur.published = true;`,
     },
   };
 
@@ -221,9 +218,11 @@ return msg;`,
     <dd>Pré-initialisé avec { callId }. Enrichir dans outputTransform (ne pas remplacer).</dd>
   </dl>
 
-  <h3>⚠️ Règle outputTransform</h3>
-  <p>Ne jamais faire <code>msg.adaptateur = { ... }</code> — cela efface le callId.<br/>
-  Faire à la place <code>msg.adaptateur.success = true;</code></p>
+  <h3>outputTransform — variable adaptateur</h3>
+  <p>La variable <code>adaptateur</code> est disponible directement :<br/>
+  <code>adaptateur.success = true;</code><br/>
+  <code>adaptateur.state = msg.payload?.data?.dps?.["1"] ? "ON" : "OFF";</code><br/>
+  Pas de <code>return</code> nécessaire. Le <code>callId</code> est injecté automatiquement.</p>
 
   <h3>Vérification callId</h3>
   <p>Le MCP Router vérifie <code>msg.adaptateur.callId</code> avant de continuer.

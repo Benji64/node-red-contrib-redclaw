@@ -46,21 +46,35 @@ module.exports = function (RED) {
           return;
         }
 
-        let outMsg = { ...msg };
+        // Réinitialise msg.adaptateur avec callId avant le transform sortie
+        // Beaucoup de nœuds Node-RED (Tuya, etc.) ne préservent pas les propriétés custom
+        // → msg.adaptateur serait undefined sans cette ligne, causant une erreur silencieuse
+        const outMsg = {
+          ...msg,
+          adaptateur: { callId },  // toujours disponible dans outputTransform
+        };
 
-        // Applique outputTransform
+        // Prépare la variable "adaptateur" accessible dans le code outputTransform
+        // L'utilisateur écrit : adaptateur.success = true; adaptateur.state = "ON";
+        const adaptateur = {};
+
+        // Applique outputTransform avec adaptateur comme variable locale
         if (node._outputFn) {
-          outMsg = node._outputFn(outMsg) || outMsg;
+          node._outputFn(outMsg, node, adaptateur);
         }
 
-        // Vérifie que msg.adaptateur a été défini
-        if (outMsg.adaptateur === undefined) {
-          node.warn(`[mcp-adapter:${node.toolName}] msg.adaptateur non défini dans outputTransform — utilise le payload brut`);
-          outMsg.adaptateur = { success: true, result: msg.payload };
+        // Si adaptateur est vide (rien n'a été défini) → fallback sur payload brut
+        if (Object.keys(adaptateur).length === 0) {
+          if (node._outputFn) {
+            node.warn(`[mcp-adapter:${node.toolName}] outputTransform n'a rien mis dans adaptateur — utilise msg.payload brut`);
+          }
+          adaptateur.success = true;
+          adaptateur.result  = msg.payload;
         }
 
-        // Injecte callId dans msg.adaptateur pour vérification par le Router
-        outMsg.adaptateur.callId = callId;
+        // Fusionne adaptateur + callId dans msg.adaptateur
+        // callId toujours injecté par le système — ne peut pas être perdu
+        outMsg.adaptateur = { ...adaptateur, callId };
 
         if (node.debugMode) node.warn(`[mcp-adapter:${node.toolName}] sortie → adaptateur:${JSON.stringify(outMsg.adaptateur)}`);
 
@@ -109,10 +123,21 @@ module.exports = function (RED) {
   function _compile(code, label, node) {
     if (!code || !code.trim()) return null;
     try {
-      return new Function("msg", "node", `
-        try { ${code} }
-        catch(e) { node.error('[mcp-adapter] ${label}: ' + e.message); return msg; }
-      `);
+      if (label === "outputTransform") {
+        // outputTransform : reçoit "adaptateur" comme variable locale pré-initialisée
+        // L'utilisateur écrit : adaptateur.success = true; adaptateur.state = "ON";
+        // Le callId est injecté par le système — pas besoin d'y toucher
+        return new Function("msg", "node", "adaptateur", `
+          try { ${code} }
+          catch(e) { node.error('[mcp-adapter] outputTransform: ' + e.message); }
+        `);
+      } else {
+        // inputTransform : comportement standard
+        return new Function("msg", "node", `
+          try { ${code} }
+          catch(e) { node.error('[mcp-adapter] inputTransform: ' + e.message); return msg; }
+        `);
+      }
     } catch (e) {
       node.error(`[mcp-adapter] Compilation ${label} : ${e.message}`);
       return null;
